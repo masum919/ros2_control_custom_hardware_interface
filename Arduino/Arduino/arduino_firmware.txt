@@ -1,0 +1,77 @@
+// Pin definitions
+const int MOTOR_PIN = 9;     // PWM-capable pin for motor control (via transistor)
+const int ENCODER_PIN_A = 2; // Purple wire (Hall Sensor A Vout)
+const int ENCODER_PIN_B = 3; // Blue wire (Hall Sensor B Vout)
+
+// Encoder variables
+volatile long encoderPos = 0;      // Stores the current encoder position
+volatile int lastEncoded = 0;      // Stores the last encoded state of the encoder
+
+void setup() {
+  Serial.begin(115200);            // Initialize serial communication at 115200 baud
+  
+  // Set up motor control pin
+  pinMode(MOTOR_PIN, OUTPUT);      // Set motor pin as output
+  
+  // Set up encoder pins with internal pull-up resistors
+  pinMode(ENCODER_PIN_A, INPUT_PULLUP);  // Set encoder pin A as input with pull-up
+  pinMode(ENCODER_PIN_B, INPUT_PULLUP);  // Set encoder pin B as input with pull-up
+  
+  // Attach interrupts for encoder pins
+  attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_A), updateEncoder, CHANGE);  // Interrupt for pin A
+  attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_B), updateEncoder, CHANGE);  // Interrupt for pin B
+}
+
+void loop() {
+  if (Serial.available() > 0) {    // Check if data is available on serial port
+    String message = Serial.readStringUntil('\n');  // Read incoming message until newline
+    
+    // Find positions of semicolons in the message
+    int firstSemicolon = message.indexOf(';');
+    int secondSemicolon = message.indexOf(';', firstSemicolon + 1);
+    int thirdSemicolon = message.indexOf(';', secondSemicolon + 1);
+    
+    // Check if all semicolons are present in the message
+    if (firstSemicolon != -1 && secondSemicolon != -1 && thirdSemicolon != -1) {
+      // Parse the message into separate values
+      int32_t rpm1Value = message.substring(0, firstSemicolon).toInt();
+      int8_t dir1Value = message.substring(firstSemicolon + 1, secondSemicolon).toInt();
+      int32_t rpm2Value = message.substring(secondSemicolon + 1, thirdSemicolon).toInt();
+      int8_t dir2Value = message.substring(thirdSemicolon + 1).toInt();
+      
+      analogWrite(MOTOR_PIN, rpm1Value);  // Set motor speed using PWM
+      
+      // Send the current encoder value and other data back to ROS2 using Serial.write()
+      noInterrupts(); // Disable interrupts to ensure atomic read of encoderPos
+      int32_t currentEncoderPos = encoderPos;
+      interrupts(); // Re-enable interrupts
+      
+      Serial.write((byte*)&currentEncoderPos, 4);  // Send current encoder value (4 bytes)
+      Serial.write((byte*)&dir1Value, 1);          // Send direction (1 byte)
+      Serial.write((byte*)&rpm2Value, 4);          // Send rpm2 (4 bytes)
+      Serial.write((byte*)&dir2Value, 1);          // Send dir2 (1 byte)
+      
+      // No reset of encoderPos here
+    }
+  }
+}
+
+// Interrupt service routine for encoder
+void updateEncoder() {
+  // Read the current state of encoder pins
+  int MSB = digitalRead(ENCODER_PIN_A); // Most Significant Bit
+  int LSB = digitalRead(ENCODER_PIN_B); // Least Significant Bit
+  
+  // Combine the two bits into a single number
+  int encoded = (MSB << 1) | LSB;
+  
+  // Store the previous encoded value
+  int sum = (lastEncoded << 2) | encoded;
+  
+  // Update encoder position based on the rotation direction
+  if(sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) encoderPos++;
+  if(sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoderPos--;
+  
+  // Store the current encoded value for next time
+  lastEncoded = encoded;
+}
