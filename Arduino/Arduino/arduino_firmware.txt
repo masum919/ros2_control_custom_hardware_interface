@@ -81,10 +81,11 @@ void updateEncoder() {
 
 **** Revised code for two motors****
 
-
 // Pin definitions
-const int MOTOR_PIN1 = 9;     // PWM-capable pin for Motor 1 control (via transistor)
-const int MOTOR_PIN2 = 10;    // PWM-capable pin for Motor 2 control (via transistor)
+const int MOTOR_PIN1_RPM = 9;      // PWM-capable pin for Motor 1 speed control (RPM)
+const int MOTOR_PIN1_DIR = 8;      // Pin for Motor 1 direction control
+const int MOTOR_PIN2_RPM = 10;     // PWM-capable pin for Motor 2 speed control (RPM)
+const int MOTOR_PIN2_DIR = 7;      // Pin for Motor 2 direction control
 
 const int ENCODER_PIN_A1 = 2; // Purple wire (Hall Sensor A Vout for Motor 1)
 const int ENCODER_PIN_B1 = 3; // Blue wire (Hall Sensor B Vout for Motor 1)
@@ -102,14 +103,16 @@ void setup() {
   Serial.begin(115200);            // Initialize serial communication at 115200 baud
   
   // Set up motor control pins
-  pinMode(MOTOR_PIN1, OUTPUT);     // Set motor pin 1 as output
-  pinMode(MOTOR_PIN2, OUTPUT);     // Set motor pin 2 as output
+  pinMode(MOTOR_PIN1_RPM, OUTPUT);     // Set motor RPM pin 1 as output
+  pinMode(MOTOR_PIN1_DIR, OUTPUT);     // Set motor direction pin 1 as output
+  pinMode(MOTOR_PIN2_RPM, OUTPUT);     // Set motor RPM pin 2 as output
+  pinMode(MOTOR_PIN2_DIR, OUTPUT);     // Set motor direction pin 2 as output
   
-  // Set up encoder pins with internal pull-up resistors
-  pinMode(ENCODER_PIN_A1, INPUT_PULLUP);  // Set encoder pin A1 as input with pull-up
-  pinMode(ENCODER_PIN_B1, INPUT_PULLUP);  // Set encoder pin B1 as input with pull-up
-  pinMode(ENCODER_PIN_A2, INPUT_PULLUP);  // Set encoder pin A2 as input with pull-up
-  pinMode(ENCODER_PIN_B2, INPUT_PULLUP);  // Set encoder pin B2 as input with pull-up
+  // Set up encoder pins
+  pinMode(ENCODER_PIN_A1, INPUT);  // Set encoder pin A1 as input
+  pinMode(ENCODER_PIN_B1, INPUT);  // Set encoder pin B1 as input
+  pinMode(ENCODER_PIN_A2, INPUT);  // Set encoder pin A2 as input
+  pinMode(ENCODER_PIN_B2, INPUT);  // Set encoder pin B2 as input
   
   // Attach interrupts for encoder pins
   attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_A1), updateEncoder1, CHANGE);  // Interrupt for Motor 1 Encoder pin A
@@ -136,10 +139,12 @@ void loop() {
       int8_t dir2Value = message.substring(thirdSemicolon + 1).toInt();
       
       // Control Motor 1
-      analogWrite(MOTOR_PIN1, rpm1Value);  // Set motor 1 speed using PWM
+      analogWrite(MOTOR_PIN1_RPM, rpm1Value);  // Set motor 1 speed using PWM
+      digitalWrite(MOTOR_PIN1_DIR, dir1Value); // Set motor 1 direction
       
       // Control Motor 2
-      analogWrite(MOTOR_PIN2, rpm2Value);  // Set motor 2 speed using PWM
+      analogWrite(MOTOR_PIN2_RPM, rpm2Value);  // Set motor 2 speed using PWM
+      digitalWrite(MOTOR_PIN2_DIR, dir2Value); // Set motor 2 direction
       
       // Send the current encoder values and other data back to ROS2 using Serial.write()
       noInterrupts(); // Disable interrupts to ensure atomic read of encoderPos
@@ -196,3 +201,4 @@ void updateEncoder2() {
   // Store the current encoded value for next time
   lastEncoded2 = encoded;
 }
+
