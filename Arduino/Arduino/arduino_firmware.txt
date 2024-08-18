@@ -75,3 +75,124 @@ void updateEncoder() {
   // Store the current encoded value for next time
   lastEncoded = encoded;
 }
+
+
+
+
+**** Revised code for two motors****
+
+
+// Pin definitions
+const int MOTOR_PIN1 = 9;     // PWM-capable pin for Motor 1 control (via transistor)
+const int MOTOR_PIN2 = 10;    // PWM-capable pin for Motor 2 control (via transistor)
+
+const int ENCODER_PIN_A1 = 2; // Purple wire (Hall Sensor A Vout for Motor 1)
+const int ENCODER_PIN_B1 = 3; // Blue wire (Hall Sensor B Vout for Motor 1)
+const int ENCODER_PIN_A2 = 4; // Purple wire (Hall Sensor A Vout for Motor 2)
+const int ENCODER_PIN_B2 = 5; // Blue wire (Hall Sensor B Vout for Motor 2)
+
+// Encoder variables
+volatile long encoderPos1 = 0;      // Stores the current encoder position for Motor 1
+volatile int lastEncoded1 = 0;      // Stores the last encoded state of the encoder for Motor 1
+
+volatile long encoderPos2 = 0;      // Stores the current encoder position for Motor 2
+volatile int lastEncoded2 = 0;      // Stores the last encoded state of the encoder for Motor 2
+
+void setup() {
+  Serial.begin(115200);            // Initialize serial communication at 115200 baud
+  
+  // Set up motor control pins
+  pinMode(MOTOR_PIN1, OUTPUT);     // Set motor pin 1 as output
+  pinMode(MOTOR_PIN2, OUTPUT);     // Set motor pin 2 as output
+  
+  // Set up encoder pins with internal pull-up resistors
+  pinMode(ENCODER_PIN_A1, INPUT_PULLUP);  // Set encoder pin A1 as input with pull-up
+  pinMode(ENCODER_PIN_B1, INPUT_PULLUP);  // Set encoder pin B1 as input with pull-up
+  pinMode(ENCODER_PIN_A2, INPUT_PULLUP);  // Set encoder pin A2 as input with pull-up
+  pinMode(ENCODER_PIN_B2, INPUT_PULLUP);  // Set encoder pin B2 as input with pull-up
+  
+  // Attach interrupts for encoder pins
+  attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_A1), updateEncoder1, CHANGE);  // Interrupt for Motor 1 Encoder pin A
+  attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_B1), updateEncoder1, CHANGE);  // Interrupt for Motor 1 Encoder pin B
+  attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_A2), updateEncoder2, CHANGE);  // Interrupt for Motor 2 Encoder pin A
+  attachInterrupt(digitalPinToInterrupt(ENCODER_PIN_B2), updateEncoder2, CHANGE);  // Interrupt for Motor 2 Encoder pin B
+}
+
+void loop() {
+  if (Serial.available() > 0) {    // Check if data is available on serial port
+    String message = Serial.readStringUntil('\n');  // Read incoming message until newline
+    
+    // Find positions of semicolons in the message
+    int firstSemicolon = message.indexOf(';');
+    int secondSemicolon = message.indexOf(';', firstSemicolon + 1);
+    int thirdSemicolon = message.indexOf(';', secondSemicolon + 1);
+    
+    // Check if all semicolons are present in the message
+    if (firstSemicolon != -1 && secondSemicolon != -1 && thirdSemicolon != -1) {
+      // Parse the message into separate values
+      int32_t rpm1Value = message.substring(0, firstSemicolon).toInt();
+      int8_t dir1Value = message.substring(firstSemicolon + 1, secondSemicolon).toInt();
+      int32_t rpm2Value = message.substring(secondSemicolon + 1, thirdSemicolon).toInt();
+      int8_t dir2Value = message.substring(thirdSemicolon + 1).toInt();
+      
+      // Control Motor 1
+      analogWrite(MOTOR_PIN1, rpm1Value);  // Set motor 1 speed using PWM
+      
+      // Control Motor 2
+      analogWrite(MOTOR_PIN2, rpm2Value);  // Set motor 2 speed using PWM
+      
+      // Send the current encoder values and other data back to ROS2 using Serial.write()
+      noInterrupts(); // Disable interrupts to ensure atomic read of encoderPos
+      int32_t currentEncoderPos1 = encoderPos1;
+      int32_t currentEncoderPos2 = encoderPos2;
+      interrupts(); // Re-enable interrupts
+      
+      Serial.write((byte*)&currentEncoderPos1, 4);  // Send current encoder value of motor 1 (4 bytes)
+      Serial.write((byte*)&dir1Value, 1);          // Send direction of motor 1 (1 byte)
+      Serial.write((byte*)&currentEncoderPos2, 4);  // Send current encoder value of motor 2 (4 bytes)
+      Serial.write((byte*)&dir2Value, 1);          // Send direction of motor 2 (1 byte)
+      
+      // No reset of encoderPos here
+    }
+  }
+}
+
+// Interrupt service routine for encoder 1
+void updateEncoder1() {
+  // Read the current state of encoder pins
+  int MSB = digitalRead(ENCODER_PIN_A1); // Most Significant Bit
+  int LSB = digitalRead(ENCODER_PIN_B1); // Least Significant Bit
+  
+  // Combine the two bits into a single number
+  int encoded = (MSB << 1) | LSB;
+  
+  // Store the previous encoded value
+  int sum = (lastEncoded1 << 2) | encoded;
+  
+  // Update encoder position based on the rotation direction
+  if(sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) encoderPos1++;
+  if(sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoderPos1--;
+  
+  // Store the current encoded value for next time
+  lastEncoded1 = encoded;
+}
+
+// Interrupt service routine for encoder 2
+void updateEncoder2() {
+  // Read the current state of encoder pins
+  int MSB = digitalRead(ENCODER_PIN_A2); // Most Significant Bit
+  int LSB = digitalRead(ENCODER_PIN_B2); // Least Significant Bit
+  
+  // Combine the two bits into a single number
+  int encoded = (MSB << 1) | LSB;
+  
+  // Store the previous encoded value
+  int sum = (lastEncoded2 << 2) | encoded;
+  
+  // Update encoder position based on the rotation direction
+  if(sum == 0b1101 || sum == 0b0100 || sum == 0b0010 || sum == 0b1011) encoderPos2++;
+  if(sum == 0b1110 || sum == 0b0111 || sum == 0b0001 || sum == 0b1000) encoderPos2--;
+  
+  // Store the current encoded value for next time
+  lastEncoded2 = encoded;
+}
