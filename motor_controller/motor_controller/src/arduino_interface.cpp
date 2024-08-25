@@ -9,6 +9,12 @@
 #include <chrono>
 #include "rclcpp/rclcpp.hpp"
 #include <string>
+#include <std_msgs/msg/int32_multi_array.hpp>  // Include the proper message type
+#include <cmath>
+
+
+
+
 
 
 namespace arduino_controller
@@ -35,6 +41,14 @@ CallbackReturn ArduinoInterface::on_init(const hardware_interface::HardwareInfo 
   {
     return result;
   }
+
+// Declare the node_ variable
+//rclcpp::Node::SharedPtr node_;
+
+// Initialize the publisher here
+// node_ = std::make_shared<rclcpp::Node>("arduino_controller_node");
+// publisher_ = node_->create_publisher<std_msgs::msg::Int32MultiArray>("arduino_data", 10);
+
 
   try
   {
@@ -224,19 +238,20 @@ int ArduinoInterface::ReadSerial(unsigned char* buf, int nBytes)
 
 
 // This function is responsible for writing commands to the Arduino
-hardware_interface::return_type ArduinoInterface::write(const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
-{
+hardware_interface::return_type ArduinoInterface::write(const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/) {
   RCLCPP_INFO(rclcpp::get_logger("arduino_actuator_interface"), "Writing");
 
-  try
-  {
+  try {
     // Get the left and right velocity commands
-    int left = static_cast<int>(velocity_commands_.at(0));
-    int right = static_cast<int>(velocity_commands_.at(1));
+    float rpmValue1 = static_cast<float>(velocity_commands_.at(0));
+    int dirValue1 = (rpmValue1 >= 0) ? 0 : 1;  // 0 for forward, 1 for reverse
+
+    float rpmValue2 = static_cast<float>(velocity_commands_.at(1));
+    int dirValue2 = (rpmValue2 >= 0) ? 0 : 1;  // 0 for forward, 1 for reverse
 
     // Create a string with the command data
-    std::string data = std::to_string(abs(left)) + ";" + (left >= 0 ? "1" : "0") + ";" +
-                       std::to_string(abs(right)) + ";" + (right >= 0 ? "1" : "0") + "\n";
+    std::string data = std::to_string(rpmValue1) + " " + std::to_string(dirValue1) + " " +
+                       std::to_string(rpmValue2) + " " + std::to_string(dirValue2) + "\n";
 
     // Write the command data to the serial port
     WriteToSerial(reinterpret_cast<const unsigned char*>(data.c_str()), data.length());
@@ -245,55 +260,58 @@ hardware_interface::return_type ArduinoInterface::write(const rclcpp::Time & /*t
     // Throttle the data transfer to avoid overwhelming the Arduino
     std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Adjust the sleep duration as needed
   }
-  catch (const std::exception& e)
-  {
+  catch (const std::exception& e) {
     // Handle any exceptions that occur during the write process
     RCLCPP_FATAL(rclcpp::get_logger("arduino_actuator_interface"), "Error: %s", e.what());
     return hardware_interface::return_type::ERROR;
   }
 
   // Log the left and right joint commands for debugging purposes
-  RCLCPP_INFO(rclcpp::get_logger("arduino_actuator_interface"), "Left joint command: %d", static_cast<int>(velocity_commands_.at(0)));
-  RCLCPP_INFO(rclcpp::get_logger("arduino_actuator_interface"), "Right joint command: %d", static_cast<int>(velocity_commands_.at(1)));
+  RCLCPP_INFO(rclcpp::get_logger("arduino_actuator_interface"), "Left joint command: %.2f, Direction: %d", velocity_commands_.at(0), (velocity_commands_.at(0) >= 0) ? 0 : 1);
+  RCLCPP_INFO(rclcpp::get_logger("arduino_actuator_interface"), "Right joint command: %.2f, Direction: %d", velocity_commands_.at(1), (velocity_commands_.at(1) >= 0) ? 0 : 1);
 
   return hardware_interface::return_type::OK;
 }
+
+
 
 // This function is responsible for reading data from the Arduino
-hardware_interface::return_type ArduinoInterface::read(const rclcpp::Time & /*time*/,
-                             const rclcpp::Duration & /*period*/)
+hardware_interface::return_type ArduinoInterface::read(const rclcpp::Time & /*time*/, const rclcpp::Duration & period)
 {
-  unsigned char buf[10] = {0};  // Buffer to store the received data
-  int bytesRead = ReadSerial(buf, 10);  // Read data from the serial port
+    // Convert the period to seconds
+    double dt = period.seconds();
 
-  if (bytesRead == 10) {
-  int32_t encoderValue, rpm2Value;
-  int8_t dir1Value, dir2Value;
-  
-  // Extract the received data from the buffer
-  memcpy(&encoderValue, buf, 4);
-  dir1Value = buf[4];
-  memcpy(&rpm2Value, buf + 5, 4);
-  dir2Value = buf[9];
+    for (size_t i = 0; i < info_.joints.size(); ++i)
+    {
+        // Update velocity states with the commanded velocities
+        velocity_states_[i] = velocity_commands_[i];
 
-  // Log the received data for debugging purposes
-  RCLCPP_INFO(rclcpp::get_logger("arduino_actuator_interface"), 
-        "Received from Arduino: Encoder=%d, Dir1=%d, RPM2=%d, Dir2=%d",
-        encoderValue, dir1Value, rpm2Value, dir2Value);
+        // Calculate position change based on velocity and time
+        double delta_position = velocity_states_[i] * dt;
 
-  } else {
-  // Handle the case when incomplete or no data is received from Arduino
-  RCLCPP_WARN(rclcpp::get_logger("arduino_actuator_interface"), 
-        "Incomplete or no data received from Arduino. Bytes read: %d", bytesRead);
-  }
+        // Update position states
+        position_states_[i] += delta_position;
 
-  return hardware_interface::return_type::OK;
+        // Normalize position to keep it within [-pi, pi] range
+        while (position_states_[i] > M_PI) position_states_[i] -= 2 * M_PI;
+        while (position_states_[i] < -M_PI) position_states_[i] += 2 * M_PI;
+    }
+
+    RCLCPP_INFO(rclcpp::get_logger("arduino_actuator_interface"), 
+                "Joint 1 position: %.2f, velocity: %.2f", 
+                position_states_[0], velocity_states_[0]);
+    RCLCPP_INFO(rclcpp::get_logger("arduino_actuator_interface"), 
+                "Joint 2 position: %.2f, velocity: %.2f", 
+                position_states_[1], velocity_states_[1]);
+
+    return hardware_interface::return_type::OK;
 }
 
 
 
 
-
+// rclcpp::Node::SharedPtr node_;  // Node for publisher
+// rclcpp::Publisher<std_msgs::msg::Int32MultiArray>::SharedPtr publisher_;  // Publisher declaration
 
 
 
