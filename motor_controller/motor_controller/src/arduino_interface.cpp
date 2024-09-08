@@ -42,12 +42,7 @@ CallbackReturn ArduinoInterface::on_init(const hardware_interface::HardwareInfo 
     return result;
   }
 
-// Declare the node_ variable
-//rclcpp::Node::SharedPtr node_;
 
-// Initialize the publisher here
-// node_ = std::make_shared<rclcpp::Node>("arduino_controller_node");
-// publisher_ = node_->create_publisher<std_msgs::msg::Int32MultiArray>("arduino_data", 10);
 
 
   try
@@ -310,8 +305,7 @@ hardware_interface::return_type ArduinoInterface::read(const rclcpp::Time & /*ti
 
 
 
-// rclcpp::Node::SharedPtr node_;  // Node for publisher
-// rclcpp::Publisher<std_msgs::msg::Int32MultiArray>::SharedPtr publisher_;  // Publisher declaration
+
 
 
 
