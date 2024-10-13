@@ -11,6 +11,8 @@
 #include <string>
 #include <std_msgs/msg/int32_multi_array.hpp>  // Include the proper message type
 #include <cmath>
+#include <std_msgs/msg/float32.hpp>
+
 
 
 
@@ -42,6 +44,13 @@ CallbackReturn ArduinoInterface::on_init(const hardware_interface::HardwareInfo 
     return result;
   }
 
+// Declare the node_ variable
+//rclcpp::Node::SharedPtr node_;
+
+// Initialize the publisher here
+
+  node_ = std::make_shared<rclcpp::Node>("velocity_publisher_node");
+  publisher_ = node_->create_publisher<std_msgs::msg::Float32>("guidewire_velocity", 10);
 
 
 
@@ -177,10 +186,15 @@ CallbackReturn ArduinoInterface::on_activate(const rclcpp_lifecycle::State & /*p
   RCLCPP_INFO(rclcpp::get_logger("ArduinoInterface"), "Starting robot hardware ...");
 
   // Reset commands and states
-  velocity_commands_ = { 0.0, 0.0};
-  prev_velocity_commands_ = { 0.0, 0.0};
-  velocity_states_ = { 0.0, 0.0};
-  position_states_ = { 0.0, 0.0};
+  // velocity_commands_ = { 0.0, 0.0};
+  // prev_velocity_commands_ = { 0.0, 0.0};
+  // velocity_states_ = { 0.0, 0.0};
+  // position_states_ = { 0.0, 0.0};
+
+  velocity_commands_.resize(info_.joints.size(), 0.0);
+  prev_velocity_commands_.resize(info_.joints.size(), 0.0);
+  velocity_states_.resize(info_.joints.size(), 0.0);
+  position_states_.resize(info_.joints.size(), 0.0);
 
 
 
@@ -271,6 +285,38 @@ hardware_interface::return_type ArduinoInterface::write(const rclcpp::Time & /*t
 
 
 // This function is responsible for reading data from the Arduino
+// hardware_interface::return_type ArduinoInterface::read(const rclcpp::Time & /*time*/, const rclcpp::Duration & period)
+// {
+//     // Convert the period to seconds
+//     double dt = period.seconds();
+
+//     for (size_t i = 0; i < info_.joints.size(); ++i)
+//     {
+//         // Update velocity states with the commanded velocities
+//         velocity_states_[i] = velocity_commands_[i];
+
+//         // Calculate position change based on velocity and time
+//         double delta_position = velocity_states_[i] * dt;
+
+//         // Update position states
+//         position_states_[i] += delta_position;
+
+//         // Normalize position to keep it within [-pi, pi] range
+//         while (position_states_[i] > M_PI) position_states_[i] -= 2 * M_PI;
+//         while (position_states_[i] < -M_PI) position_states_[i] += 2 * M_PI;
+//     }
+
+//     RCLCPP_INFO(rclcpp::get_logger("arduino_actuator_interface"), 
+//                 "Joint 1 position: %.2f, velocity: %.2f", 
+//                 position_states_[0], velocity_states_[0]);
+//     RCLCPP_INFO(rclcpp::get_logger("arduino_actuator_interface"), 
+//                 "Joint 2 position: %.2f, velocity: %.2f", 
+//                 position_states_[1], velocity_states_[1]);
+
+//     return hardware_interface::return_type::OK;
+// }
+
+
 hardware_interface::return_type ArduinoInterface::read(const rclcpp::Time & /*time*/, const rclcpp::Duration & period)
 {
     // Convert the period to seconds
@@ -279,7 +325,8 @@ hardware_interface::return_type ArduinoInterface::read(const rclcpp::Time & /*ti
     for (size_t i = 0; i < info_.joints.size(); ++i)
     {
         // Update velocity states with the commanded velocities
-        velocity_states_[i] = velocity_commands_[i];
+       // velocity_states_[i] = velocity_commands_[i];
+       velocity_states_[i] = velocity_commands_[i] * (2 * M_PI / 60.0);
 
         // Calculate position change based on velocity and time
         double delta_position = velocity_states_[i] * dt;
@@ -292,12 +339,38 @@ hardware_interface::return_type ArduinoInterface::read(const rclcpp::Time & /*ti
         while (position_states_[i] < -M_PI) position_states_[i] += 2 * M_PI;
     }
 
+    // Log position and velocity states for both joints
     RCLCPP_INFO(rclcpp::get_logger("arduino_actuator_interface"), 
                 "Joint 1 position: %.2f, velocity: %.2f", 
                 position_states_[0], velocity_states_[0]);
     RCLCPP_INFO(rclcpp::get_logger("arduino_actuator_interface"), 
                 "Joint 2 position: %.2f, velocity: %.2f", 
                 position_states_[1], velocity_states_[1]);
+
+    // Constants for calculating translational velocity V_t
+    double R = 0.0125;  // Updated roller radius in meters
+    double theta = 30.0 * M_PI / 180.0;  // Tilt angle in radians (30 degrees)
+
+    // Convert RPM to radians per second (rads/sec)
+    double omega_1 = velocity_commands_[0] * (2 * M_PI / 60.0);  // RPM to rad/s
+    double omega_2 = velocity_commands_[1] * (2 * M_PI / 60.0);  // RPM to rad/s
+
+    // Calculate V_t (translational velocity in meters per second)
+    double V_t = -(R / 2) * cos(theta) * (omega_1 - omega_2);
+
+    // Ensure the velocity is positive
+    V_t = std::abs(V_t);
+
+    // Convert the velocity from meters per second to millimeters per second
+    V_t *= 1000;  // Convert to mm/s
+
+    // Create a message and publish the velocity in mm/s
+    std_msgs::msg::Float32 velocity_msg;
+    velocity_msg.data = static_cast<float>(V_t);
+    publisher_->publish(velocity_msg);
+
+    // Log the published velocity in mm/s
+    RCLCPP_INFO(rclcpp::get_logger("arduino_actuator_interface"), "Published V_t: %.2f mm/s", V_t);
 
     return hardware_interface::return_type::OK;
 }
@@ -306,6 +379,8 @@ hardware_interface::return_type ArduinoInterface::read(const rclcpp::Time & /*ti
 
 
 
+// rclcpp::Node::SharedPtr node_;  // Node for publisher
+// rclcpp::Publisher<std_msgs::msg::Int32MultiArray>::SharedPtr publisher_;  // Publisher declaration
 
 
 
