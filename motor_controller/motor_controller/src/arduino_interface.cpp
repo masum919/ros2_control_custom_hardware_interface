@@ -50,7 +50,7 @@ CallbackReturn ArduinoInterface::on_init(const hardware_interface::HardwareInfo 
 // Initialize the publisher here
 
   node_ = std::make_shared<rclcpp::Node>("velocity_publisher_node");
-  publisher_ = node_->create_publisher<std_msgs::msg::Float32>("guidewire_velocity", 10);
+  publisher_ = node_->create_publisher<std_msgs::msg::Float32>("w_velocity", 10);
 
 
 
