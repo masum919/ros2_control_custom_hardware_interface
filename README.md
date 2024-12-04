@@ -10,3 +10,9 @@ Deactivate the motor controller with the command `ros2 control set_controller_st
 Unload the motor controller with the command `ros2 control unload_controller motor_controller`
 Reload the controller with the command `ros2 control load_controller motor_controller`
 Reactivate the controller with the command `ros2 control set_controller_state motor_controller_active`
+
+If you intend to use multiple controllers for controlling multiple Arduinos from the same machine make the following changes in your config.yaml and your launch files for all the controllers.
+
+![config_yaml](https://github.com/user-attachments/assets/b8f0a988-de61-49e6-b12d-c4d073f95306)
+![launch_py](https://github.com/user-attachments/assets/5338a053-d0fd-466f-93b4-ff59dfff0a52)
+
